@@ -3,12 +3,14 @@ package main
 import (
     "flag"
     "fmt"
+    "log"
     "os"
     "os/signal"
     "io/ioutil"
     "syscall"
     "strings"
     "github.com/bwmarrin/discordgo"
+    "github.com/PuerkitoBio/goquery"
 )
 
 // Variables used for command line parameters
@@ -78,5 +80,32 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func handleMessage(s *discordgo.Session, m *discordgo.MessageCreate, tokens []string) {
-    s.ChannelMessageSend(m.ChannelID, "ok")
+    tlpdSearchResults(strings.Join(tokens, " "))
+    s.ChannelMessageSend(m.ChannelID, "ok, " + strings.Join(tokens, " "))
+}
+
+func tlpdSearchResults(query string) {
+    BaseUrl := "http://www.teamliquid.net"
+    SearchUrl := fmt.Sprintf(
+        BaseUrl +
+        "/tlpd/maps/index.php?" +
+        "section=korean&tabulator_page=1&tabulator_order_col=default&" +
+        "tabulator_search=%s",
+        query)
+    fmt.Printf(SearchUrl)
+    doc, err := goquery.NewDocument(SearchUrl)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf(doc.Text()[:100] + "\n\n")
+
+    // Find the map links.
+    doc.Find("div.roundcont #tblt_table table td a").Each(func(i int, s *goquery.Selection) {
+        link, _ := s.Attr("href")
+        fmt.Printf(link + "\n")
+    })
+}
+
+func parseResults(html []byte) {
+    return
 }
