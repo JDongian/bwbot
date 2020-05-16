@@ -37,6 +37,9 @@ func init() {
 }
 
 func main() {
+	// Cache to reduce load on TL, since they throttle rates
+	cache := make(map[string]*discordgo.MessageEmbed)
+
     fmt.Println("Starting...")
     // Create a new Discord session using the provided bot token.
     dg, err := discordgo.New("Bot " + Token)
@@ -46,7 +49,7 @@ func main() {
     }
 
     // Register the messageCreate func as a callback for MessageCreate events.
-    dg.AddHandler(messageCreate)
+    dg.AddHandler(cachedMessageHandler(cache))
 
     // Open a websocket connection to Discord and begin listening.
     err = dg.Open()
@@ -65,25 +68,30 @@ func main() {
     dg.Close()
 }
 
-// This function will be called (due to AddHandler above) every time a new
-// message is created on any channel that the autenticated bot has access to.
-func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-    // Ignore all messages created by the bot itself
-    if m.Author.ID == s.State.User.ID {
-        return
-    }
-    msg := m.ContentWithMentionsReplaced()
-    parts := strings.Split(strings.ToLower(msg), " ")
-    // If the message starts with the prefix
-    if parts[0] == "!bw" {
-        handleMessage(s, m, parts[1:])
-    }
-}
-
-func handleMessage(s *discordgo.Session, m *discordgo.MessageCreate, tokens []string) {
-    mapData := tlpdSearchResults(strings.Join(tokens, " "))
-    em := formatMapData(mapData)
-    s.ChannelMessageSendEmbed(m.ChannelID, em)
+func cachedMessageHandler(cache map[string]*discordgo.MessageEmbed)	func(*discordgo.Session, *discordgo.MessageCreate) {
+	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
+		// Ignore all messages created by the bot itself
+		if m.Author.ID == s.State.User.ID {
+			return
+		}
+		msg := m.ContentWithMentionsReplaced()
+		parts := strings.Split(strings.ToLower(msg), " ")
+		// If the message starts with the prefix
+		if parts[0] == "!bw" {
+			query := strings.Join(parts[1:], " ")
+			var em *discordgo.MessageEmbed
+			if val, ok := cache[query]; ok {
+				fmt.Println("Cache hit!")
+				em = val
+			} else{
+				fmt.Println("Cache miss!")
+				mapData := tlpdSearchResults(query)
+				em = formatMapData(mapData)
+				cache[query] = em
+			}
+			s.ChannelMessageSendEmbed(m.ChannelID, em)
+		}
+	}
 }
 
 func tlpdSearchResults(query string) map[string]string {
@@ -99,7 +107,7 @@ func tlpdSearchResults(query string) map[string]string {
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Println("<HTML>" + doc.Text()[:20] + "...</HTML>")  // DEBUG
+	fmt.Println("<HTML>" + doc.Text()[:20] + "...</HTML>")  // DEBUG
 
     // Find the map links.
     //doc.Find("div.roundcont #tblt_table table td a").Each(func(i int, s *goquery.Selection) {
